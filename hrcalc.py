@@ -6,10 +6,14 @@ MA_SIZE = 4       # The size of the moving average window
 SECS_DATA = 2     # Number of seconds of data to collect
 BUFFER_SIZE = SAMPLE_FREQ * SECS_DATA  # The total buffer size for collected data
 
-# Function to calculate heart rate and impulse per minute (IPM)
-def calc_hr_and_ipm(ir_data):
+# Function to calculate HR, IPM, HRSTD, and RMSSD
+def calc_hr_metrics(ir_data):
     """
-    By detecting peaks of the PPG cycle, calculate heart rate and Impulse Per Minute (IPM).
+    By detecting peaks of the PPG cycle, calculate:
+      - Heart Rate (HR)
+      - Impulse Per Minute (IPM)
+      - Heart Rate Standard Deviation (HRSTD)
+      - Root Mean Square of Successive Differences (RMSSD)
     """
     # Compute the mean of the IR data to find the DC component
     ir_mean = int(np.mean(ir_data))
@@ -29,23 +33,35 @@ def calc_hr_and_ipm(ir_data):
     # Detect peaks in the signal
     ir_valley_locs, n_peaks = find_peaks(x, BUFFER_SIZE, n_th, 4, 15)
 
-    # Calculate Heart Rate (HR) based on peak intervals
-    peak_interval_sum = 0
+    # Calculate Heart Rate (HR) and R-R intervals
+    peak_intervals = []
+    hr = -999
+    hr_valid = False
     if n_peaks >= 2:
         for i in range(1, n_peaks):
-            peak_interval_sum += (ir_valley_locs[i] - ir_valley_locs[i-1])
-        peak_interval_sum = int(peak_interval_sum / (n_peaks - 1))
-        hr = int(SAMPLE_FREQ * 60 / peak_interval_sum)
+            interval = (ir_valley_locs[i] - ir_valley_locs[i-1]) / SAMPLE_FREQ  # Convert to seconds
+            peak_intervals.append(interval)
+        
+        # Average interval to calculate HR
+        avg_interval = np.mean(peak_intervals)
+        hr = int(60 / avg_interval)  # Convert interval to beats per minute
         hr_valid = True
-    else:
-        hr = -999  # Unable to calculate due to insufficient peaks
-        hr_valid = False
 
     # Calculate Impulse Per Minute (IPM)
-    # The number of detected impulses extrapolated to a 1-minute duration
     ipm = (n_peaks / SECS_DATA) * 60  # Convert impulses per `SECS_DATA` to per minute
 
-    return hr, hr_valid, ipm
+    # Calculate HRSTD (Heart Rate Standard Deviation)
+    hrstd = np.std(peak_intervals) * 60 if len(peak_intervals) > 1 else -999  # in bpm
+
+    # Calculate RMSSD (Root Mean Square of Successive Differences)
+    if len(peak_intervals) > 1:
+        diff_intervals = np.diff(peak_intervals)  # Successive differences
+        rmssd = np.sqrt(np.mean(diff_intervals ** 2)) * 60  # in bpm
+    else:
+        rmssd = -999
+
+    return hr, hr_valid, ipm, hrstd, rmssd
+
 
 # # Function to calculate heart rate (HR) from infrared (IR) sensor data
 # def calc_hr(ir_data):
