@@ -159,7 +159,7 @@ class MAX30102():
         This function will read the red-led and ir-led `amount` times.
         This works as blocking function.
         """
-        red_buf = []
+        # red_buf = []
         ir_buf = []
 
         for i in range(amount):
@@ -169,9 +169,9 @@ class MAX30102():
             if event.type == gpiod.LineEvent.FALLING_EDGE:
                 # Interrupt signal received, read data
                 red, ir = self.read_fifo()
-                red_buf.append(red)
+                # red_buf.append(red)
                 ir_buf.append(ir)
 
-        return red_buf, ir_buf
+        return ir_buf
 
 
