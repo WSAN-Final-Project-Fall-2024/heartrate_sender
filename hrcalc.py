@@ -1,47 +1,35 @@
-# -*-coding:utf-8
-
 import numpy as np
-# import configparser
 
+# Constants used in the program
+SAMPLE_FREQ = 25  # The sampling frequency of the sensor in Hz (samples per second)
+MA_SIZE = 4       # The size of the moving average window
+SECS_DATA = 2     # Number of seconds of data to collect
+BUFFER_SIZE = SAMPLE_FREQ * SECS_DATA  # The total buffer size for collected data
 
-# # Initialize the parser
-# config = configparser.ConfigParser()
-# # Read the config file
-# config.read('config.ini')
-
-SAMPLE_FREQ = 25
-MA_SIZE = 4
-SECS_DATA = 2
-BUFFER_SIZE = SAMPLE_FREQ * SECS_DATA
-
-BUFFER_SIZE = SAMPLE_FREQ * SECS_DATA
-
-
-# this assumes ir_data and red_data as np.array
-def calc_hr_and_spo2(ir_data, red_data):
+# Function to calculate heart rate and impulse per minute (IPM)
+def calc_hr_and_ipm(ir_data):
     """
-    By detecting  peaks of PPG cycle and corresponding AC/DC
-    of red/infra-red signal, the an_ratio for the SPO2 is computed.
+    By detecting peaks of the PPG cycle, calculate heart rate and Impulse Per Minute (IPM).
     """
-    # get dc mean
+    # Compute the mean of the IR data to find the DC component
     ir_mean = int(np.mean(ir_data))
 
-    # remove DC mean and inver signal
-    # this lets peak detecter detect valley
+    # Remove DC mean and invert the signal to detect valleys as peaks
     x = -1 * (np.array(ir_data) - ir_mean)
 
-    # 4 point moving average
-    # x is np.array with int values, so automatically casted to int
+    # Apply a 4-point moving average to smooth the signal
     for i in range(x.shape[0] - MA_SIZE):
         x[i] = np.sum(x[i:i+MA_SIZE]) / MA_SIZE
 
-    # calculate threshold
+    # Calculate the threshold for peak detection
     n_th = int(np.mean(x))
-    n_th = 30 if n_th < 30 else n_th  # min allowed
-    n_th = 60 if n_th > 60 else n_th  # max allowed
+    n_th = 30 if n_th < 30 else n_th  # Minimum threshold allowed
+    n_th = 60 if n_th > 60 else n_th  # Maximum threshold allowed
 
+    # Detect peaks in the signal
     ir_valley_locs, n_peaks = find_peaks(x, BUFFER_SIZE, n_th, 4, 15)
-    # print(ir_valley_locs[:n_peaks], ",", end="")
+
+    # Calculate Heart Rate (HR) based on peak intervals
     peak_interval_sum = 0
     if n_peaks >= 2:
         for i in range(1, n_peaks):
@@ -50,115 +38,130 @@ def calc_hr_and_spo2(ir_data, red_data):
         hr = int(SAMPLE_FREQ * 60 / peak_interval_sum)
         hr_valid = True
     else:
-        hr = -999  # unable to calculate because # of peaks are too small
+        hr = -999  # Unable to calculate due to insufficient peaks
         hr_valid = False
 
-    # ---------spo2---------
+    # Calculate Impulse Per Minute (IPM)
+    # The number of detected impulses extrapolated to a 1-minute duration
+    ipm = (n_peaks / SECS_DATA) * 60  # Convert impulses per `SECS_DATA` to per minute
 
-    # find precise min near ir_valley_locs (???)
-    exact_ir_valley_locs_count = n_peaks
+    return hr, hr_valid, ipm
 
-    # find ir-red DC and ir-red AC for SPO2 calibration ratio
-    # find AC/DC maximum of raw
+# # Function to calculate heart rate (HR) from infrared (IR) sensor data
+# def calc_hr(ir_data):
+#     """
+#     Calculate heart rate using PPG (Photoplethysmogram) data from the infrared sensor.
+    
+#     This function detects peaks in the IR data to calculate the intervals between peaks,
+#     which represent the heartbeats, and then estimates the heart rate.
+    
+#     Parameters:
+#         ir_data (np.array): Array of infrared data from the MAX30102 sensor.
+    
+#     Returns:
+#         hr (int): Estimated heart rate in beats per minute.
+#         hr_valid (bool): Indicator of whether the heart rate calculation is valid.
+#     """
+    
+#     # Step 1: Calculate the mean value (DC component) of the IR data
+#     ir_mean = int(np.mean(ir_data))
+    
+#     # Step 2: Remove the DC component and invert the signal to make valleys become peaks
+#     x = -1 * (np.array(ir_data) - ir_mean)
 
-    # FIXME: needed??
-    for i in range(exact_ir_valley_locs_count):
-        if ir_valley_locs[i] > BUFFER_SIZE:
-            spo2 = -999  # do not use SPO2 since valley loc is out of range
-            spo2_valid = False
-            return hr, hr_valid, spo2, spo2_valid
+#     # Step 3: Apply a 4-point moving average filter to smooth the data
+#     # This reduces noise and helps in peak detection
+#     for i in range(x.shape[0] - MA_SIZE):
+#         x[i] = np.sum(x[i:i+MA_SIZE]) / MA_SIZE
 
-    i_ratio_count = 0
-    ratio = []
+#     # Step 4: Calculate the threshold for peak detection
+#     # Threshold is used to distinguish between peaks and non-peaks
+#     n_th = int(np.mean(x))
+#     n_th = 30 if n_th < 30 else n_th  # Minimum threshold value is 30
+#     n_th = 60 if n_th > 60 else n_th  # Maximum threshold value is 60
 
-    # find max between two valley locations
-    # and use ratio between AC component of Ir and Red DC component of Ir and Red for SpO2
-    red_dc_max_index = -1
-    ir_dc_max_index = -1
-    for k in range(exact_ir_valley_locs_count-1):
-        red_dc_max = -16777216
-        ir_dc_max = -16777216
-        if ir_valley_locs[k+1] - ir_valley_locs[k] > 3:
-            for i in range(ir_valley_locs[k], ir_valley_locs[k+1]):
-                if ir_data[i] > ir_dc_max:
-                    ir_dc_max = ir_data[i]
-                    ir_dc_max_index = i
-                if red_data[i] > red_dc_max:
-                    red_dc_max = red_data[i]
-                    red_dc_max_index = i
+#     # Step 5: Detect peaks in the filtered data
+#     # Peaks represent the valleys in the original signal (heartbeats)
+#     ir_valley_locs, n_peaks = find_peaks(x, BUFFER_SIZE, n_th, 4, 15)
 
-            red_ac = int((red_data[ir_valley_locs[k+1]] - red_data[ir_valley_locs[k]]) * (red_dc_max_index - ir_valley_locs[k]))
-            red_ac = red_data[ir_valley_locs[k]] + int(red_ac / (ir_valley_locs[k+1] - ir_valley_locs[k]))
-            red_ac = red_data[red_dc_max_index] - red_ac  # subtract linear DC components from raw
+#     # Step 6: Calculate the heart rate if there are enough peaks detected
+#     peak_interval_sum = 0
+#     if n_peaks >= 2:
+#         # Compute the average time interval between consecutive peaks
+#         for i in range(1, n_peaks):
+#             peak_interval_sum += (ir_valley_locs[i] - ir_valley_locs[i-1])
+#         peak_interval_sum = int(peak_interval_sum / (n_peaks - 1))
+        
+#         # Calculate heart rate in beats per minute
+#         hr = int(SAMPLE_FREQ * 60 / peak_interval_sum)
+#         hr_valid = True  # Heart rate calculation is valid
+#     else:
+#         hr = -999  # Indicates an invalid heart rate due to insufficient peaks
+#         hr_valid = False
 
-            ir_ac = int((ir_data[ir_valley_locs[k+1]] - ir_data[ir_valley_locs[k]]) * (ir_dc_max_index - ir_valley_locs[k]))
-            ir_ac = ir_data[ir_valley_locs[k]] + int(ir_ac / (ir_valley_locs[k+1] - ir_valley_locs[k]))
-            ir_ac = ir_data[ir_dc_max_index] - ir_ac  # subtract linear DC components from raw
+#     return hr, hr_valid
 
-            nume = red_ac * ir_dc_max
-            denom = ir_ac * red_dc_max
-            if (denom > 0 and i_ratio_count < 5) and nume != 0:
-                # original cpp implementation uses overflow intentionally.
-                # but at 64-bit OS, Pyhthon 3.X uses 64-bit int and nume*100/denom does not trigger overflow
-                # so using bit operation ( &0xffffffff ) is needed
-                ratio.append(int(((nume * 100) & 0xffffffff) / denom))
-                i_ratio_count += 1
-
-    # choose median value since PPG signal may vary from beat to beat
-    ratio = sorted(ratio)  # sort to ascending order
-    mid_index = int(i_ratio_count / 2)
-
-    ratio_ave = 0
-    if mid_index > 1:
-        ratio_ave = int((ratio[mid_index-1] + ratio[mid_index])/2)
-    else:
-        if len(ratio) != 0:
-            ratio_ave = ratio[mid_index]
-
-    # why 184?
-    # print("ratio average: ", ratio_ave)
-    if ratio_ave > 2 and ratio_ave < 184:
-        # -45.060 * ratioAverage * ratioAverage / 10000 + 30.354 * ratioAverage / 100 + 94.845
-        spo2 = -45.060 * (ratio_ave**2) / 10000.0 + 30.054 * ratio_ave / 100.0 + 94.845
-        spo2_valid = True
-    else:
-        spo2 = -999
-        spo2_valid = False
-
-    return hr, hr_valid, spo2, spo2_valid
-
-
+# Function to find peaks in the IR data
 def find_peaks(x, size, min_height, min_dist, max_num):
     """
-    Find at most MAX_NUM peaks above MIN_HEIGHT separated by at least MIN_DISTANCE
+    Find peaks in the IR data.
+    
+    Parameters:
+        x (np.array): Array of filtered IR data.
+        size (int): Size of the data array.
+        min_height (int): Minimum height for a peak to be considered.
+        min_dist (int): Minimum distance between consecutive peaks.
+        max_num (int): Maximum number of peaks to detect.
+    
+    Returns:
+        ir_valley_locs (list): List of indices where peaks are detected.
+        n_peaks (int): Number of peaks detected.
     """
+    
+    # Step 1: Find all peaks above the minimum height
     ir_valley_locs, n_peaks = find_peaks_above_min_height(x, size, min_height, max_num)
+    
+    # Step 2: Remove peaks that are too close to each other
     ir_valley_locs, n_peaks = remove_close_peaks(n_peaks, ir_valley_locs, x, min_dist)
 
+    # Ensure the number of detected peaks does not exceed the maximum allowed
     n_peaks = min([n_peaks, max_num])
 
     return ir_valley_locs, n_peaks
 
-
+# Function to find peaks that exceed a minimum height
 def find_peaks_above_min_height(x, size, min_height, max_num):
     """
-    Find all peaks above MIN_HEIGHT
+    Identify peaks in the data that exceed a specified minimum height.
+    
+    Parameters:
+        x (np.array): Array of filtered IR data.
+        size (int): Size of the data array.
+        min_height (int): Minimum height for a peak to be considered.
+        max_num (int): Maximum number of peaks to detect.
+    
+    Returns:
+        ir_valley_locs (list): List of indices where peaks are detected.
+        n_peaks (int): Number of peaks detected.
     """
-
+    
     i = 0
     n_peaks = 0
-    ir_valley_locs = []  # [0 for i in range(max_num)]
+    ir_valley_locs = []
+    
+    # Iterate through the data to find peaks
     while i < size - 1:
-        if x[i] > min_height and x[i] > x[i-1]:  # find the left edge of potential peaks
+        if x[i] > min_height and x[i] > x[i-1]:  # Detect the start of a potential peak
             n_width = 1
-            # original condition i+n_width < size may cause IndexError
-            # so I changed the condition to i+n_width < size - 1
-            while i + n_width < size - 1 and x[i] == x[i+n_width]:  # find flat peaks
+            
+            # Handle flat peaks by checking if the value remains the same
+            while i + n_width < size - 1 and x[i] == x[i+n_width]:
                 n_width += 1
-            if x[i] > x[i+n_width] and n_peaks < max_num:  # find the right edge of peaks
-                # ir_valley_locs[n_peaks] = i
-                ir_valley_locs.append(i)
-                n_peaks += 1  # original uses post increment
+                
+            # Confirm a peak if the value drops after the flat section
+            if x[i] > x[i+n_width] and n_peaks < max_num:
+                ir_valley_locs.append(i)  # Record the peak location
+                n_peaks += 1
                 i += n_width + 1
             else:
                 i += n_width
@@ -167,35 +170,42 @@ def find_peaks_above_min_height(x, size, min_height, max_num):
 
     return ir_valley_locs, n_peaks
 
-
+# Function to remove peaks that are too close to each other
 def remove_close_peaks(n_peaks, ir_valley_locs, x, min_dist):
     """
-    Remove peaks separated by less than MIN_DISTANCE
+    Remove peaks that are closer than the specified minimum distance.
+    
+    Parameters:
+        n_peaks (int): Initial number of peaks detected.
+        ir_valley_locs (list): List of peak indices.
+        x (np.array): Array of filtered IR data.
+        min_dist (int): Minimum allowable distance between peaks.
+    
+    Returns:
+        sorted_indices (list): List of filtered peak indices.
+        n_peaks (int): Updated number of peaks after filtering.
     """
-
-    # should be equal to maxim_sort_indices_descend
-    # order peaks from large to small
-    # should ignore index:0
+    
+    # Sort peaks by height (from highest to lowest)
     sorted_indices = sorted(ir_valley_locs, key=lambda i: x[i])
     sorted_indices.reverse()
 
-    # this "for" loop expression does not check finish condition
-    # for i in range(-1, n_peaks):
     i = -1
     while i < n_peaks:
         old_n_peaks = n_peaks
         n_peaks = i + 1
-        # this "for" loop expression does not check finish condition
-        # for j in (i + 1, old_n_peaks):
         j = i + 1
+        
+        # Remove peaks that are too close to the current peak
         while j < old_n_peaks:
-            n_dist = (sorted_indices[j] - sorted_indices[i]) if i != -1 else (sorted_indices[j] + 1)  # lag-zero peak of autocorr is at index -1
+            n_dist = (sorted_indices[j] - sorted_indices[i]) if i != -1 else (sorted_indices[j] + 1)
             if n_dist > min_dist or n_dist < -1 * min_dist:
                 sorted_indices[n_peaks] = sorted_indices[j]
-                n_peaks += 1  # original uses post increment
+                n_peaks += 1
             j += 1
         i += 1
 
+    # Sort the remaining peaks in ascending order of indices
     sorted_indices[:n_peaks] = sorted(sorted_indices[:n_peaks])
 
     return sorted_indices, n_peaks
