@@ -7,7 +7,7 @@ SECS_DATA = 2     # Number of seconds of data to collect
 BUFFER_SIZE = SAMPLE_FREQ * SECS_DATA  # The total buffer size for collected data
 
 # Function to calculate HR, IPM, HRSTD, and RMSSD
-def calc_hr_metrics(ir_data):
+def calc_hr_and_ipm(ir_data):
     """
     By detecting peaks of the PPG cycle, calculate:
       - Heart Rate (HR)
