@@ -16,8 +16,8 @@ try:
         ir = m.read_sequential()
 
         # Calculate heart rate and IPM
-        hr, hr_valid, ipm, _, _ = hrcalc.calc_hr_and_ipm(ir)
-        data_to_send = f"Heart Rate: {hr} bpm (Valid: {hr_valid}), Impulse Per Minute: {ipm}"
+        hr, hr_valid, ipm, hrstd, rmssd = hrcalc.calc_hr_and_ipm(ir)
+        data_to_send = f"Heart Rate: {hr} bpm (Valid: {hr_valid}), Impulse Per Minute: {ipm}, Heart Rate STD: {hrstd}, RMSSD: {rmssd}"
         print(data_to_send)
         # Send data over bluetooth
         sender.send_data(data_to_send)
